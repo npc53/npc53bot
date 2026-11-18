@@ -1,7 +1,7 @@
 import os
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters, ContextTypes
 
 # توکن ربات
 TOKEN = "9241692260:AAFlYoIqnJFBpVmGIegUBa2zXW0Cztn5T1Q"
@@ -28,7 +28,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-    # دو دکمه کالبک برای اینکه با زدن هرکدام، پیام بسته شود
     keyboard = [
         [InlineKeyboardButton("حتما!!! (عضو شدم، بررسی کن)", callback_data="check_join")],
         [InlineKeyboardButton("نه", callback_data="refuse_join")]
@@ -50,7 +49,6 @@ async def show_main_menu_new(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = "سلام! به ربات دانلود بازی خوش آمدید. برای دیدن لیست بازی‌ها روی دکمه زیر کلیک کنید:"
     
     chat_id = update.effective_chat.id
-    # پاک کردن پیام قبلی جوین برای اینکه صفحه تمیز بماند
     if update.callback_query:
         try:
             await update.callback_query.message.delete()
@@ -59,13 +57,20 @@ async def show_main_menu_new(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
     await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
 
+# ابزار کمکی: دریافت File ID هر فایلی که خودتان به ربات بفرستید
+async def get_my_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message and update.message.document:
+        f_id = update.message.document.file_id
+        print(f"\n---> NEW FILE ID: {f_id}\n")
+        await update.message.reply_text(f"File ID اختصاصی این فایل:\n`{f_id}`", parse_mode="Markdown")
+
 # مدیریت کلیک روی دکمه‌ها
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
 
-    # اگر کاربر روی بررسی عضویت (حتما!!!) زد
+    # بررسی عضویت
     if query.data == "check_join":
         try:
             member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
@@ -75,10 +80,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             else:
                 await query.answer("هنوز در کانال عضو نشده‌اید! لطفاً اول جوین شوید.", show_alert=True)
-                # دکمه ورود مستقیم به کانال را به عنوان راهنما زیرش بگذاریم یا لینک بدهیم:
                 return
         except Exception:
-            # اگر نتوانست چک کند، برای اینکه کاربر معطل نشود اجازه عبور می‌دهیم و پیام را می‌بندیم
             await query.message.delete()
             await show_main_menu_new(update, context)
             return
@@ -109,15 +112,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text="به منوی اصلی برگشتید:", reply_markup=reply_markup)
 
-    # ارسال فایل بازی My Friend Pedro با File ID صحیح
+    # ارسال فایل بازی My Friend Pedro
     elif query.data == "download_my_friend_pedro":
         chat_id = query.message.chat_id
+        
+        # نکته: وقتی فایل را به ربات خودتان فروستادید و File ID اختصاصی ربات خود را گرفتید، 
+        # آن را جایگزین رشته‌ی زیر کنید تا خطای دسترسی برطرف شود.
         game_file_id = "BQACAgQAAxkBAAEkt4xq_imamNE6a-KG5UIEWAdpGFOetwACMxwAAmV08FPdC8i0vb6Gcz0E"
         
         try:
             await query.edit_message_text(text="در حال ارسال فایل بازی My Friend Pedro... لطفا منتظر بمانید.")
             
-            # ارسال مستقیم فایل از طریق File ID
             await context.bot.send_document(
                 chat_id=chat_id, 
                 document=game_file_id, 
@@ -132,7 +137,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"خطا در ارسال: {e}")
             await context.bot.send_message(
                 chat_id=chat_id, 
-                text="❌ خطایی در ارسال فایل رخ داد. لطفاً مطمئن شوید ربات دسترسی لازم را دارد."
+                text="❌ خطایی در ارسال فایل رخ داد. لطفاً مطمئن شوید File ID متعلق به همین ربات است."
             )
 
 def main():
@@ -140,6 +145,8 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
+    # این هندلر کمک می‌کند هر فایلی به ربات بفرستید، File ID اختصاصی آن را در لاگ رندر چاپ کند
+    app.add_handler(MessageHandler(filters.Document.ALL, get_my_file_id))
 
     print("ربات روشن شد و آماده به کار است...")
     app.run_polling()
