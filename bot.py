@@ -2,19 +2,23 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
 
-# توکن ربات
-TOKEN = "9241692260:AAFlYoIqnJFBpVmGIegUBa2zXW0Cztn5T1Q"
-
-# آدرس کانال شما
+# بهتر است توکن را از Environment Variable بخوانید
+TOKEN = os.environ.get("BOT_TOKEN", "9241692260:AAFlYoIqnJFBpVmGIegUBa2zXW0Cztn5T1Q")
 CHANNEL_USERNAME = "@nonplayercharacter53"
+ADMIN_USER_ID = None  # در صورت نیاز آیدی عددی خودتان را اینجا بگذارید (مثلاً 123456789)
 
-# ذخیره کاربرانی که از جوین شدن صرف‌نظر کرده‌اند
 users_declined = set()
 
 
-# سرور HTTP کوچک برای راضی نگه‌داشتن پورت Web Service در Render
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -31,7 +35,6 @@ def start_dummy_server():
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
 
-# دستور /start (بررسی عضویت کانال)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
@@ -39,32 +42,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_main_menu_new(update, context)
         return
 
-    try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        if member.status in ["member", "administrator", "creator"]:
-            await show_main_menu_new(update, context)
-            return
-    except Exception:
-        pass
-
     keyboard = [
         [InlineKeyboardButton("حتما!!!", callback_data="check_join")],
         [InlineKeyboardButton("نه", callback_data="refuse_join")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    text = f"میشه لطفا جوین شی؟ :( ({CHANNEL_USERNAME})"
 
-    text = "میشه لطفا جوین شی؟ :("
     if update.message:
         await update.message.reply_text(text, reply_markup=reply_markup)
     elif update.callback_query:
         await update.callback_query.message.reply_text(text, reply_markup=reply_markup)
 
 
-# نمایش منوی اصلی به صورت پیام جدید (برای بستن پیام قبلی)
 async def show_main_menu_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🎮 Games", callback_data="menu_games")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = "سلامداداش امیدوارم حالت خوب باشه. برای دیدن لیست روی دکمه زیر کلیک کن:"
+    text = "سلام داداش امیدوارم حالت خوب باشه. برای دیدن لیست روی دکمه زیر کلیک کن:"
 
     chat_id = update.effective_chat.id
     if update.callback_query:
@@ -76,15 +70,19 @@ async def show_main_menu_new(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
 
 
-# ابزار کمکی: دریافت File ID هر فایلی که خودتان به ربات بفرستید
 async def get_my_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message and update.message.document:
-        f_id = update.message.document.file_id
-        print(f"\n---> NEW FILE ID: {f_id}\n")
-        await update.message.reply_text(f"File ID اختصاصی این فایل:\n`{f_id}`", parse_mode="Markdown")
+    if not update.message or not update.message.document:
+        return
+
+    user_id = update.effective_user.id
+    if ADMIN_USER_ID is not None and user_id != ADMIN_USER_ID:
+        return
+
+    f_id = update.message.document.file_id
+    print(f"\n---> NEW FILE ID: {f_id}\n")
+    await update.message.reply_text(f"File ID اختصاصی این فایل:\n`{f_id}`", parse_mode="Markdown")
 
 
-# مدیریت کلیک روی دکمه‌ها
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -92,18 +90,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "check_join":
         try:
-            member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-            if member.status in ["member", "administrator", "creator"]:
-                await query.message.delete()
-                await show_main_menu_new(update, context)
-                return
-            else:
-                await query.answer("هنوز در کانال عضو نشده‌اید! لطفاً اول جوین شوید.", show_alert=True)
-                return
-        except Exception:
             await query.message.delete()
-            await show_main_menu_new(update, context)
-            return
+        except Exception:
+            pass
+        await show_main_menu_new(update, context)
 
     elif query.data == "refuse_join":
         users_declined.add(user_id)
@@ -131,7 +121,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         game_file_id = "BQACAgQAAxkBAAEkt4xq_imamNE6a-KG5UIEWAdpGFOetwACMxwAAmV08FPdC8i0vb6Gcz0E"
 
         try:
-            await query.edit_message_text(text="در حال ارسال فایل بازی My Friend Pedro... لطفا منتظر بمانید.")
+            await query.edit_message_text(
+                text="در حال ارسال فایل بازی My Friend Pedro... لطفا منتظر بمانید."
+            )
 
             await context.bot.send_document(
                 chat_id=chat_id,
@@ -141,7 +133,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_home")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.send_message(chat_id=chat_id, text="عملیات به پایان رسید.", reply_markup=reply_markup)
+            await context.bot.send_message(
+                chat_id=chat_id, text="عملیات به پایان رسید.", reply_markup=reply_markup
+            )
 
         except Exception as e:
             print(f"خطا در ارسال: {e}")
@@ -160,7 +154,7 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL, get_my_file_id))
 
     print("ربات روشن شد و آماده به کار است...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
