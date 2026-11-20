@@ -48,12 +48,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     keyboard = [
-        [InlineKeyboardButton("حتما!!! (عضو شدم، بررسی کن)", callback_data="check_join")],
+        [InlineKeyboardButton("حتما!!!", callback_data="check_join")],
         [InlineKeyboardButton("نه", callback_data="refuse_join")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    text = "دوست خوبم ببخشید ها ولی میشه لطفا این جا جوین بشی :("
+    text = "میشه لطفا جوین شی؟ :("
     if update.message:
         await update.message.reply_text(text, reply_markup=reply_markup)
     elif update.callback_query:
@@ -64,7 +64,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_main_menu_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🎮 Games", callback_data="menu_games")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = "سلام! به ربات دانلود بازی خوش آمدید. برای دیدن لیست بازی‌ها روی دکمه زیر کلیک کنید:"
+    text = "سلامداداش امیدوارم حالت خوب باشه. برای دیدن لیست روی دکمه زیر کلیک کن:"
 
     chat_id = update.effective_chat.id
     if update.callback_query:
