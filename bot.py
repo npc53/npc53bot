@@ -2,6 +2,7 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import TelegramError
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -15,8 +16,15 @@ from telegram.ext import (
 TOKEN = os.environ.get("BOT_TOKEN", "9241692260:AAFlYoIqnJFBpVmGIegUBa2zXW0Cztn5T1Q")
 CHANNEL_USERNAME = "@nonplayercharacter53"
 ADMIN_USER_ID = None  # در صورت نیاز آیدی عددی خودتان را اینجا بگذارید (مثلاً 123456789)
+STATS_CODE = "in25yearsyourfavouritegumwillcomebackinstyle"
 
 users_declined = set()
+known_users = set()
+
+
+def track_user(update: Update):
+    if update.effective_user:
+        known_users.add(update.effective_user.id)
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -35,7 +43,17 @@ def start_dummy_server():
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
 
+async def is_user_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
+    try:
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        return member.status in ("member", "administrator", "creator")
+    except TelegramError as e:
+        print(f"خطا در بررسی عضویت کانال: {e}")
+        return False
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update)
     user_id = update.effective_user.id
 
     if user_id in users_declined:
@@ -47,7 +65,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("نه", callback_data="refuse_join")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = f"میشه لطفا جوین شی؟ :("
+    text = "میشه لطفا جوین شی؟ :("
 
     if update.message:
         await update.message.reply_text(text, reply_markup=reply_markup)
@@ -71,6 +89,7 @@ async def show_main_menu_new(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def get_my_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update)
     if not update.message or not update.message.document:
         return
 
@@ -83,19 +102,36 @@ async def get_my_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"File ID اختصاصی این فایل:\n`{f_id}`", parse_mode="Markdown")
 
 
+async def secret_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update)
+    if not update.message or not update.message.text:
+        return
+
+    if update.message.text.strip() == STATS_CODE:
+        total_users = len(known_users)
+        await update.message.reply_text(f"تعداد کل کاربرانی که از ربات استفاده کرده‌اند: {total_users}")
+
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update)
     query = update.callback_query
-    await query.answer()
     user_id = update.effective_user.id
 
     if query.data == "check_join":
-        try:
-            await query.message.delete()
-        except Exception:
-            pass
-        await show_main_menu_new(update, context)
+        joined = await is_user_member(context, user_id)
+
+        if joined:
+            await query.answer()
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            await show_main_menu_new(update, context)
+        else:
+            await query.answer(text="هنوز داخل چنل عضو نشدی!", show_alert=False)
 
     elif query.data == "refuse_join":
+        await query.answer()
         users_declined.add(user_id)
         try:
             await query.message.delete()
@@ -104,6 +140,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_main_menu_new(update, context)
 
     elif query.data == "menu_games":
+        await query.answer()
         keyboard = [
             [InlineKeyboardButton("🍌 my friend pedro", callback_data="download_my_friend_pedro")],
             [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_home")],
@@ -112,11 +149,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text="لیست بازی‌های موجود:", reply_markup=reply_markup)
 
     elif query.data == "back_home":
+        await query.answer()
         keyboard = [[InlineKeyboardButton("🎮 Games", callback_data="menu_games")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(text="به منوی اصلی برگشتید:", reply_markup=reply_markup)
 
     elif query.data == "download_my_friend_pedro":
+        await query.answer()
         chat_id = query.message.chat_id
         game_file_id = "BQACAgQAAxkBAAPMawFeM23VVg78J5uQdQFO5k8dA7kAAjMcAAJldPBT5N74a5PpSBs9BA"
 
@@ -152,6 +191,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.Document.ALL, get_my_file_id))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, secret_stats_handler))
 
     print("ربات روشن شد و آماده به کار است...")
     app.run_polling(drop_pending_updates=True)
