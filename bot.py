@@ -2,6 +2,7 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ChatMemberStatus
 from telegram.error import TelegramError
 from telegram.ext import (
     ApplicationBuilder,
@@ -46,7 +47,12 @@ def start_dummy_server():
 async def is_user_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        return member.status in ("member", "administrator", "creator")
+        print(f"DEBUG -> user_id={user_id}, status={member.status}")
+        return member.status in (
+            ChatMemberStatus.MEMBER,
+            ChatMemberStatus.ADMINISTRATOR,
+            ChatMemberStatus.OWNER,
+        )
     except TelegramError as e:
         print(f"خطا در بررسی عضویت کانال: {e}")
         return False
