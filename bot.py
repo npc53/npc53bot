@@ -3,8 +3,6 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ChatMemberStatus
-from telegram.error import TelegramError
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -15,7 +13,7 @@ from telegram.ext import (
 )
 
 TOKEN = os.environ.get("BOT_TOKEN", "9241692260:AAFlYoIqnJFBpVmGIegUBa2zXW0Cztn5T1Q")
-CHANNEL_USERNAME = "@nonplayercharacter53"
+CHANNEL_URL = "https://t.me/nonplayercharacter53"
 ADMIN_USER_ID = None  # در صورت نیاز آیدی عددی خودتان را اینجا بگذارید
 STATS_CODE = "in25yearsyourfavouritegumwillcomebackinstyle"
 DATA_FILE = "bot_data.json"
@@ -29,23 +27,17 @@ def load_data() -> dict:
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return {
-                    "known_users": set(data.get("known_users", [])),
-                    "users_declined": set(data.get("users_declined", [])),
-                }
+                return {"known_users": set(data.get("known_users", []))}
         except Exception as e:
             print(f"خطا در خواندن فایل داده: {e}")
-    return {"known_users": set(), "users_declined": set()}
+    return {"known_users": set()}
 
 
-def save_data(known_users: set, users_declined: set) -> None:
+def save_data(known_users: set) -> None:
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "known_users": list(known_users),
-                    "users_declined": list(users_declined),
-                },
+                {"known_users": list(known_users)},
                 f,
                 ensure_ascii=False,
                 indent=2,
@@ -56,7 +48,6 @@ def save_data(known_users: set, users_declined: set) -> None:
 
 state = load_data()
 known_users = state["known_users"]
-users_declined = state["users_declined"]
 
 
 def get_total_users_count() -> int:
@@ -72,7 +63,7 @@ def track_user(update: Update) -> None:
         user_id = update.effective_user.id
         if user_id not in known_users:
             known_users.add(user_id)
-            save_data(known_users, users_declined)
+            save_data(known_users)
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -91,19 +82,6 @@ def start_dummy_server() -> None:
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
 
-async def is_user_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
-    try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        return member.status in (
-            ChatMemberStatus.MEMBER,
-            ChatMemberStatus.ADMINISTRATOR,
-            ChatMemberStatus.OWNER,
-        )
-    except TelegramError as e:
-        print(f"خطا در بررسی عضویت کانال: {e}")
-        return False
-
-
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton("🎮 Games", callback_data="menu_games")]])
 
@@ -115,40 +93,31 @@ def games_menu_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def get_start_text() -> str:
+    return (
+        f'سلام امیدوارم حالت خوب باشه. برای دیدن لیست روی دکمه زیر کلیک کن'
+        f'(و اگر هم خاستی وارد <a href="{CHANNEL_URL}">چنل</a> شو):'
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     track_user(update)
-    user_id = update.effective_user.id
-
-    # اگر کاربر قبلا "نه" زده یا عضو کانال است، مستقیم وارد منوی اصلی می‌شود
-    if user_id in users_declined or await is_user_member(context, user_id):
-        await show_main_menu(update, context)
-        return
-
-    channel_clean = CHANNEL_USERNAME.lstrip("@")
-    keyboard = [
-        [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{channel_clean}")],
-        [InlineKeyboardButton("حتما!!!", callback_data="check_join")],
-        [InlineKeyboardButton("نه", callback_data="refuse_join")],
-    ]
-    text = f"میشه لطفا جوین شی؟ :(\nکانال: {CHANNEL_USERNAME}"
+    text = get_start_text()
 
     if update.message:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text(
+            text,
+            reply_markup=main_menu_keyboard(),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
     elif update.callback_query and update.callback_query.message:
-        await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-
-
-async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "سلام امیدوارم حالت خوب باشه. برای دیدن لیست روی دکمه زیر کلیک کن:"
-    chat_id = update.effective_chat.id
-
-    if update.callback_query and update.callback_query.message:
-        try:
-            await update.callback_query.message.delete()
-        except Exception:
-            pass
-
-    await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=main_menu_keyboard())
+        await update.callback_query.message.reply_text(
+            text,
+            reply_markup=main_menu_keyboard(),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
 
 
 async def get_my_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -183,23 +152,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query:
         return
 
-    user_id = update.effective_user.id
     data = query.data
 
-    if data == "check_join":
-        if await is_user_member(context, user_id):
-            await query.answer()
-            await show_main_menu(update, context)
-        else:
-            await query.answer(text="هنوز داخل چنل عضو نشدی!", show_alert=True)
-
-    elif data == "refuse_join":
-        await query.answer()
-        users_declined.add(user_id)
-        save_data(known_users, users_declined)
-        await show_main_menu(update, context)
-
-    elif data == "menu_games":
+    if data == "menu_games":
         await query.answer()
         try:
             await query.edit_message_text(text="لیست بازی‌های موجود:", reply_markup=games_menu_keyboard())
