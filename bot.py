@@ -1,3 +1,4 @@
+import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -13,19 +14,65 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# بهتر است توکن را از Environment Variable بخوانید
 TOKEN = os.environ.get("BOT_TOKEN", "9241692260:AAFlYoIqnJFBpVmGIegUBa2zXW0Cztn5T1Q")
 CHANNEL_USERNAME = "@nonplayercharacter53"
-ADMIN_USER_ID = None  # در صورت نیاز آیدی عددی خودتان را اینجا بگذارید (مثلاً 123456789)
+ADMIN_USER_ID = None  # در صورت نیاز آیدی عددی خودتان را اینجا بگذارید
 STATS_CODE = "in25yearsyourfavouritegumwillcomebackinstyle"
+DATA_FILE = "bot_data.json"
 
-users_declined = set()
-known_users = set()
+# هر عددی اینجا بگذارید، همیشه به تعداد کل کاربران اضافه می‌شود (حتی بعد از آپدیت)
+BASE_USERS_OFFSET = 0
 
 
-def track_user(update: Update):
+def load_data() -> dict:
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return {
+                    "known_users": set(data.get("known_users", [])),
+                    "users_declined": set(data.get("users_declined", [])),
+                }
+        except Exception as e:
+            print(f"خطا در خواندن فایل داده: {e}")
+    return {"known_users": set(), "users_declined": set()}
+
+
+def save_data(known_users: set, users_declined: set) -> None:
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "known_users": list(known_users),
+                    "users_declined": list(users_declined),
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+    except Exception as e:
+        print(f"خطا در ذخیره فایل داده: {e}")
+
+
+state = load_data()
+known_users = state["known_users"]
+users_declined = state["users_declined"]
+
+
+def get_total_users_count() -> int:
+    try:
+        env_extra = int(os.environ.get("EXTRA_USERS_COUNT", "0"))
+    except ValueError:
+        env_extra = 0
+    return BASE_USERS_OFFSET + env_extra + len(known_users)
+
+
+def track_user(update: Update) -> None:
     if update.effective_user:
-        known_users.add(update.effective_user.id)
+        user_id = update.effective_user.id
+        if user_id not in known_users:
+            known_users.add(user_id)
+            save_data(known_users, users_declined)
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -38,7 +85,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         pass
 
 
-def start_dummy_server():
+def start_dummy_server() -> None:
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -47,7 +94,6 @@ def start_dummy_server():
 async def is_user_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
     try:
         member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        print(f"DEBUG -> user_id={user_id}, status={member.status}")
         return member.status in (
             ChatMemberStatus.MEMBER,
             ChatMemberStatus.ADMINISTRATOR,
@@ -58,40 +104,51 @@ async def is_user_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bo
         return False
 
 
+def main_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🎮 Games", callback_data="menu_games")]])
+
+
+def games_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🍌 my friend pedro", callback_data="download_my_friend_pedro")],
+        [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_home")],
+    ])
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     track_user(update)
     user_id = update.effective_user.id
 
-    if user_id in users_declined:
-        await show_main_menu_new(update, context)
+    # اگر کاربر قبلا "نه" زده یا عضو کانال است، مستقیم وارد منوی اصلی می‌شود
+    if user_id in users_declined or await is_user_member(context, user_id):
+        await show_main_menu(update, context)
         return
 
+    channel_clean = CHANNEL_USERNAME.lstrip("@")
     keyboard = [
+        [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{channel_clean}")],
         [InlineKeyboardButton("حتما!!!", callback_data="check_join")],
         [InlineKeyboardButton("نه", callback_data="refuse_join")],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    text = "میشه لطفا جوین شی؟ :("
+    text = f"میشه لطفا جوین شی؟ :(\nکانال: {CHANNEL_USERNAME}"
 
     if update.message:
-        await update.message.reply_text(text, reply_markup=reply_markup)
-    elif update.callback_query:
-        await update.callback_query.message.reply_text(text, reply_markup=reply_markup)
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    elif update.callback_query and update.callback_query.message:
+        await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-async def show_main_menu_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🎮 Games", callback_data="menu_games")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "سلام امیدوارم حالت خوب باشه. برای دیدن لیست روی دکمه زیر کلیک کن:"
-
     chat_id = update.effective_chat.id
-    if update.callback_query:
+
+    if update.callback_query and update.callback_query.message:
         try:
             await update.callback_query.message.delete()
         except Exception:
             pass
 
-    await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+    await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=main_menu_keyboard())
 
 
 async def get_my_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,61 +171,66 @@ async def secret_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if update.message.text.strip() == STATS_CODE:
-        total_users = len(known_users)
-        await update.message.reply_text(f"تعداد کل کاربرانی که از ربات استفاده کرده‌اند: {total_users}")
+        total_users = get_total_users_count()
+        await update.message.reply_text(
+            f"تعداد کل کاربرانی که از ربات استفاده کرده‌اند: {total_users}"
+        )
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     track_user(update)
     query = update.callback_query
+    if not query:
+        return
+
     user_id = update.effective_user.id
+    data = query.data
 
-    if query.data == "check_join":
-        joined = await is_user_member(context, user_id)
-
-        if joined:
+    if data == "check_join":
+        if await is_user_member(context, user_id):
             await query.answer()
-            try:
-                await query.message.delete()
-            except Exception:
-                pass
-            await show_main_menu_new(update, context)
+            await show_main_menu(update, context)
         else:
-            await query.answer(text="هنوز داخل چنل عضو نشدی!", show_alert=False)
+            await query.answer(text="هنوز داخل چنل عضو نشدی!", show_alert=True)
 
-    elif query.data == "refuse_join":
+    elif data == "refuse_join":
         await query.answer()
         users_declined.add(user_id)
+        save_data(known_users, users_declined)
+        await show_main_menu(update, context)
+
+    elif data == "menu_games":
+        await query.answer()
         try:
-            await query.message.delete()
+            await query.edit_message_text(text="لیست بازی‌های موجود:", reply_markup=games_menu_keyboard())
         except Exception:
-            pass
-        await show_main_menu_new(update, context)
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="لیست بازی‌های موجود:",
+                reply_markup=games_menu_keyboard(),
+            )
 
-    elif query.data == "menu_games":
+    elif data == "back_home":
         await query.answer()
-        keyboard = [
-            [InlineKeyboardButton("🍌 my friend pedro", callback_data="download_my_friend_pedro")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_home")],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="لیست بازی‌های موجود:", reply_markup=reply_markup)
+        try:
+            await query.edit_message_text(text="به منوی اصلی برگشتید:", reply_markup=main_menu_keyboard())
+        except Exception:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="به منوی اصلی برگشتید:",
+                reply_markup=main_menu_keyboard(),
+            )
 
-    elif query.data == "back_home":
+    elif data == "download_my_friend_pedro":
         await query.answer()
-        keyboard = [[InlineKeyboardButton("🎮 Games", callback_data="menu_games")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="به منوی اصلی برگشتید:", reply_markup=reply_markup)
-
-    elif query.data == "download_my_friend_pedro":
-        await query.answer()
-        chat_id = query.message.chat_id
+        chat_id = query.message.chat_id if query.message else update.effective_chat.id
         game_file_id = "BQACAgQAAxkBAAPMawFeM23VVg78J5uQdQFO5k8dA7kAAjMcAAJldPBT5N74a5PpSBs9BA"
 
         try:
-            await query.edit_message_text(
-                text="در حال ارسال فایل بازی My Friend Pedro... لطفا منتظر بمانید."
-            )
+            if query.message:
+                await query.edit_message_text(
+                    text="در حال ارسال فایل بازی My Friend Pedro... لطفا منتظر بمانید."
+                )
 
             await context.bot.send_document(
                 chat_id=chat_id,
@@ -176,10 +238,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption="بازی My Friend Pedro با موفقیت ارسال شد! 🍌🎮",
             )
 
-            keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_home")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            back_markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_home")]
+            ])
             await context.bot.send_message(
-                chat_id=chat_id, text="عملیات به پایان رسید.", reply_markup=reply_markup
+                chat_id=chat_id, text="عملیات به پایان رسید.", reply_markup=back_markup
             )
 
         except Exception as e:
