@@ -47,7 +47,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("نه", callback_data="refuse_join")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = f"میشه لطفا جوین شی؟ :( ({CHANNEL_USERNAME})"
+    text = f"میشه لطفا جوین شی؟ :("
 
     if update.message:
         await update.message.reply_text(text, reply_markup=reply_markup)
@@ -58,7 +58,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_main_menu_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🎮 Games", callback_data="menu_games")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = "سلام داداش امیدوارم حالت خوب باشه. برای دیدن لیست روی دکمه زیر کلیک کن:"
+    text = "سلام امیدوارم حالت خوب باشه. برای دیدن لیست روی دکمه زیر کلیک کن:"
 
     chat_id = update.effective_chat.id
     if update.callback_query:
@@ -118,7 +118,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "download_my_friend_pedro":
         chat_id = query.message.chat_id
-        game_file_id = "BQACAgQAAxkBAAEkt4xq_imamNE6a-KG5UIEWAdpGFOetwACMxwAAmV08FPdC8i0vb6Gcz0E"
+        game_file_id = "BQACAgQAAxkBAAPMawFeM23VVg78J5uQdQFO5k8dA7kAAjMcAAJldPBT5N74a5PpSBs9BA"
 
         try:
             await query.edit_message_text(
