@@ -21,6 +21,19 @@ DATA_FILE = "bot_data.json"
 # هر عددی اینجا بگذارید، همیشه به تعداد کل کاربران اضافه می‌شود (حتی بعد از آپدیت)
 BASE_USERS_OFFSET = 0
 
+GAME_FILES = {
+    "download_my_friend_pedro": {
+        "title": "My Friend Pedro",
+        "file_id": "BQACAgQAAxkBAAPMawFeM23VVg78J5uQdQFO5k8dA7kAAjMcAAJldPBT5N74a5PpSBs9BA",
+        "caption": "بازی My Friend Pedro با موفقیت ارسال شد! 🍌🎮",
+    },
+    "download_oddmar": {
+        "title": "Oddmar",
+        "file_id": "BQACAgQAAxkBAAIBWWsEmly06ORAcYI63vvTDL23zw-lAAKvIgACFy8gUONrl-Tua421PQQ",
+        "caption": "بازی Oddmar با موفقیت ارسال شد! 🪓🎮",
+    },
+}
+
 
 def load_data() -> dict:
     if os.path.exists(DATA_FILE):
@@ -89,6 +102,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
 def games_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🍌 my friend pedro", callback_data="download_my_friend_pedro")],
+        [InlineKeyboardButton("🪓 oddmar", callback_data="download_oddmar")],
         [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_home")],
     ])
 
@@ -176,21 +190,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=main_menu_keyboard(),
             )
 
-    elif data == "download_my_friend_pedro":
+    elif data in GAME_FILES:
         await query.answer()
         chat_id = query.message.chat_id if query.message else update.effective_chat.id
-        game_file_id = "BQACAgQAAxkBAAPMawFeM23VVg78J5uQdQFO5k8dA7kAAjMcAAJldPBT5N74a5PpSBs9BA"
+        game = GAME_FILES[data]
 
         try:
             if query.message:
                 await query.edit_message_text(
-                    text="در حال ارسال فایل بازی My Friend Pedro... لطفا منتظر بمانید."
+                    text=f"در حال ارسال فایل بازی {game['title']}... لطفا منتظر بمانید."
                 )
 
             await context.bot.send_document(
                 chat_id=chat_id,
-                document=game_file_id,
-                caption="بازی My Friend Pedro با موفقیت ارسال شد! 🍌🎮",
+                document=game["file_id"],
+                caption=game["caption"],
             )
 
             back_markup = InlineKeyboardMarkup([
