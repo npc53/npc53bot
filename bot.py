@@ -12,7 +12,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
-TOKEN = os.environ.get("BOT_TOKEN", "9241692260:AAFlYoIqnJFBpVmGIegUBa2zXW0Cztn5T1Q")
+TOKEN = os.environ.get("BOT_TOKEN")
 CHANNEL_URL = "https://t.me/nonplayercharacter53"
 ADMIN_USER_ID = None  # در صورت نیاز آیدی عددی خودتان را اینجا بگذارید
 STATS_CODE = "in25yearsyourfavouritegumwillcomebackinstyle"
@@ -209,6 +209,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+    if not TOKEN:
+        raise ValueError("متغیر محیطی BOT_TOKEN تنظیم نشده است.")
+
     start_dummy_server()
     app = ApplicationBuilder().token(TOKEN).build()
 
